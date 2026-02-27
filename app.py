@@ -18,6 +18,10 @@ CORS(app)
 from flask import Response
 import json
 
+@app.route('/')
+def home():
+    return jsonify({"status": "healthy", "message": "Bug-RCA Backend is running!"})
+
 @app.route('/api/process-video', methods=['POST'])
 def process_video():
     data = request.json
