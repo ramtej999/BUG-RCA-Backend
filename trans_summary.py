@@ -66,8 +66,6 @@ def translate_comments(comments: list[str], api_key=None, abort_event=None, prog
                 parsed_batch.extend(batch[len(parsed_batch):])
             
             translated_results.extend(parsed_batch[:len(batch)])
-            # Reduced sleep timer from 5s to 1s to prevent Vercel connection drop
-            time.sleep(1) 
             
         except Exception as e:
             print(f"Error translating batch {batch_num}: {e}. Skipping batch.")
@@ -96,8 +94,6 @@ def summarize_comments(translated_comments: list[str], api_key=None, abort_event
         
         try:
             chunk_summaries.append(_call_groq(prompt, api_key=api_key))
-            # Reduced sleep timer from 5s to 1s
-            time.sleep(1)
         except Exception as e:
             print(f"Error summarizing chunk {chunk_num}: {e}")
             
