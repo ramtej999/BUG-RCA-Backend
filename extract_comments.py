@@ -21,13 +21,13 @@ def fetch_comments(video_url, api_key=None, abort_event=None):
     if not api_key:
         api_key = os.environ.get("YOUTUBE_API_KEY")
     if not api_key:
-        print("Error: YouTube API key not provided and not in environment variables.")
-        return []
+        api_key = os.environ.get("YOUTUBE_API_KEY")
+    if not api_key:
+        raise ValueError("YouTube API key not provided.")
         
     video_id = extract_video_id(video_url)
     if not video_id:
-        print(f"Error: Could not extract video ID from {video_url}")
-        return []
+        raise ValueError(f"Could not extract a valid YouTube video ID from {video_url}")
 
     try:
         # Initialize the YouTube API client
@@ -66,8 +66,6 @@ def fetch_comments(video_url, api_key=None, abort_event=None):
         return comments
 
     except HttpError as e:
-        print(f"YouTube API Error: {e}")
-        return []
+        raise Exception(f"YouTube API Error: {e.reason}")
     except Exception as e:
-        print(f"Unexpected error extracting comments: {e}")
-        return []
+        raise Exception(f"Unexpected error extracting comments: {str(e)}")
