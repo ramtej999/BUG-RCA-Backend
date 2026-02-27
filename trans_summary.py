@@ -28,7 +28,8 @@ def _call_groq(prompt: str, api_key=None, json_mode=False) -> str:
 
 def translate_comments(comments: list[str], api_key=None, abort_event=None, progress_callback=None) -> list[str]:
     translated_results = []
-    batch_size = 20
+    # Increased batch size to process faster
+    batch_size = 40 
     total_batches = (len(comments) + batch_size - 1) // batch_size
     
     for i in range(0, len(comments), batch_size):
@@ -65,7 +66,8 @@ def translate_comments(comments: list[str], api_key=None, abort_event=None, prog
                 parsed_batch.extend(batch[len(parsed_batch):])
             
             translated_results.extend(parsed_batch[:len(batch)])
-            time.sleep(5)
+            # Reduced sleep timer from 5s to 1s to prevent Vercel connection drop
+            time.sleep(1) 
             
         except Exception as e:
             print(f"Error translating batch {batch_num}: {e}. Skipping batch.")
@@ -74,7 +76,8 @@ def translate_comments(comments: list[str], api_key=None, abort_event=None, prog
     return translated_results
 
 def summarize_comments(translated_comments: list[str], api_key=None, abort_event=None, progress_callback=None) -> str:
-    chunk_size = 500
+    # Increased chunk size to process faster
+    chunk_size = 1000 
     total_chunks = (len(translated_comments) + chunk_size - 1) // chunk_size
     chunk_summaries = []
     
@@ -93,7 +96,8 @@ def summarize_comments(translated_comments: list[str], api_key=None, abort_event
         
         try:
             chunk_summaries.append(_call_groq(prompt, api_key=api_key))
-            time.sleep(5)
+            # Reduced sleep timer from 5s to 1s
+            time.sleep(1)
         except Exception as e:
             print(f"Error summarizing chunk {chunk_num}: {e}")
             
