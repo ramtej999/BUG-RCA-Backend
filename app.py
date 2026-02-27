@@ -29,8 +29,11 @@ def process_video():
         return jsonify({'error': 'URL is required'}), 400
         
     video_url = data['url']
-    youtube_api_key = data.get('youtube_api_key')
-    groq_api_key = data.get('groq_api_key')
+    youtube_api_key = data.get('youtube_api_key', '').strip()
+    groq_api_key = data.get('groq_api_key', '').strip()
+    
+    if not youtube_api_key or not groq_api_key:
+        return jsonify({'error': 'Both YouTube and Groq API keys are required.'}), 400
     
     def generate():
         try:
