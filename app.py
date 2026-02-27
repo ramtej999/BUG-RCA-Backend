@@ -9,6 +9,7 @@ load_dotenv()
 from extract_comments import fetch_comments
 from trans_summary import translate_and_summarise
 import threading
+import queue
 
 app = Flask(__name__)
 
@@ -39,22 +40,33 @@ def process_video():
         try:
             abort_event = threading.Event()
             abort_result = {}
+            msg_queue = queue.Queue()
             
-            def run_task(task_name, func, *args):
+            def progress_callback(msg):
+                msg_queue.put(msg)
+            
+            def run_task(task_name, func, *args, **kwargs):
                 def target():
                     try:
-                        abort_result[task_name] = func(*args, abort_event=abort_event)
+                        abort_result[task_name] = func(*args, abort_event=abort_event, **kwargs)
                     except Exception as e:
                         abort_result[f"{task_name}_error"] = str(e)
                 
                 t = threading.Thread(target=target)
                 t.start()
                 while t.is_alive():
+                    while not msg_queue.empty():
+                        msg = msg_queue.get()
+                        yield f"data: {json.dumps({'status': task_name, 'message': msg})}\n\n"
                     yield "data: {}\n\n" # empty payload serves as a heartbeat ping
-                    time.sleep(1)
+                    t.join(1.0)
+                    
+                while not msg_queue.empty():
+                    msg = msg_queue.get()
+                    yield f"data: {json.dumps({'status': task_name, 'message': msg})}\n\n"
                     
             # Step 1: Extract comments dynamically
-            yield f"data: {json.dumps({'status': 'extracting', 'message': 'Extracting comments from YouTube...'})}\n\n"
+            yield f"data: {json.dumps({'status': 'extracting', 'message': 'Fetching comments from YouTube...'})}\n\n"
             yield from run_task('extract', fetch_comments, video_url, youtube_api_key)
             if abort_event.is_set(): return # Terminated early
             
@@ -68,10 +80,12 @@ def process_video():
                 yield f"data: {json.dumps({'error': 'No comments found for this video.'})}\n\n"
                 return
             
+            yield f"data: {json.dumps({'status': 'extracting', 'message': 'Extracted comments successfully.'})}\n\n"
+            
             # Step 2: Translate & Summarize using Gemini Pipeline
             yield f"data: {json.dumps({'status': 'translating', 'message': f'Translating and summarizing {len(comments)} comments with Groq LLaMA...'})}\n\n"
             
-            yield from run_task('trans_summary', translate_and_summarise, comments, groq_api_key)
+            yield from run_task('trans_summary', translate_and_summarise, comments, groq_api_key, progress_callback=progress_callback)
             if abort_event.is_set(): return # Terminated early
             
             if 'trans_summary_error' in abort_result:
