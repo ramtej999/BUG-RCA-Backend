@@ -58,7 +58,9 @@ def process_video():
                     while not msg_queue.empty():
                         msg = msg_queue.get()
                         yield f"data: {json.dumps({'status': task_name, 'message': msg})}\n\n"
-                    yield "data: {}\n\n" # empty payload serves as a heartbeat ping
+                    
+                    # Ping with 2048 spaces to FORCE Cloudflare/Nginx to flush the TCP buffer
+                    yield f": {' ' * 2048}\n\n" 
                     t.join(1.0)
                     
                 while not msg_queue.empty():
