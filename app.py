@@ -110,7 +110,11 @@ def process_video():
             
     import time
 
-    return Response(generate(), mimetype='text/event-stream')
+    return Response(generate(), mimetype='text/event-stream', headers={
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',
+        'Connection': 'keep-alive'
+    })
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
