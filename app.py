@@ -1,0 +1,83 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+from extract_comments import fetch_comments
+from trans_summary import translate_and_summarise
+import threading
+
+app = Flask(__name__)
+
+# Enable CORS for all domains to allow React frontend connection
+CORS(app)
+
+from flask import Response
+import json
+
+@app.route('/api/process-video', methods=['POST'])
+def process_video():
+    data = request.json
+    if not data or 'url' not in data:
+        return jsonify({'error': 'URL is required'}), 400
+        
+    video_url = data['url']
+    youtube_api_key = data.get('youtube_api_key')
+    groq_api_key = data.get('groq_api_key')
+    
+    def generate():
+        try:
+            abort_event = threading.Event()
+            abort_result = {}
+            
+            def run_task(task_name, func, *args):
+                def target():
+                    abort_result[task_name] = func(*args, abort_event=abort_event)
+                t = threading.Thread(target=target)
+                t.start()
+                while t.is_alive():
+                    yield "data: {}\n\n" # empty payload serves as a heartbeat ping
+                    time.sleep(1)
+                    
+            # Step 1: Extract comments dynamically
+            yield f"data: {json.dumps({'status': 'extracting', 'message': 'Extracting comments from YouTube...'})}\n\n"
+            yield from run_task('extract', fetch_comments, video_url, youtube_api_key)
+            if abort_event.is_set(): return # Terminated early
+            comments = abort_result.get('extract')
+            
+            if not comments:
+                yield f"data: {json.dumps({'error': 'No comments found or unable to extract comments due to bot detection.'})}\n\n"
+                return
+            
+            # Step 2: Translate & Summarize using Gemini Pipeline
+            yield f"data: {json.dumps({'status': 'translating', 'message': f'Translating and summarizing {len(comments)} comments with Groq LLaMA...'})}\n\n"
+            
+            yield from run_task('trans_summary', translate_and_summarise, comments, groq_api_key)
+            if abort_event.is_set(): return # Terminated early
+            
+            payload = abort_result.get('trans_summary', {})
+            translated_comments = payload.get("translated_comments", [])
+            summary = payload.get("summary", "Summarization failed.")
+            
+            # Final output
+            extracted_translated_sample = translated_comments[:20] if translated_comments else []
+            yield f"data: {json.dumps({'status': 'complete', 'results': {'extracted_count': len(comments), 'comments': comments[:20], 'translated_comments': extracted_translated_sample, 'summary': summary}})}\n\n"
+            
+        except GeneratorExit:
+            # Triggered when client disconnects (clicks Stop button) mid-stream
+            print("Client disconnected. Cancelling internal tasks...")
+            if 'abort_event' in locals():
+                abort_event.set()
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            
+    import time
+
+    return Response(generate(), mimetype='text/event-stream')
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
