@@ -39,7 +39,11 @@ def process_video():
             
             def run_task(task_name, func, *args):
                 def target():
-                    abort_result[task_name] = func(*args, abort_event=abort_event)
+                    try:
+                        abort_result[task_name] = func(*args, abort_event=abort_event)
+                    except Exception as e:
+                        abort_result[f"{task_name}_error"] = str(e)
+                
                 t = threading.Thread(target=target)
                 t.start()
                 while t.is_alive():
@@ -50,10 +54,15 @@ def process_video():
             yield f"data: {json.dumps({'status': 'extracting', 'message': 'Extracting comments from YouTube...'})}\n\n"
             yield from run_task('extract', fetch_comments, video_url, youtube_api_key)
             if abort_event.is_set(): return # Terminated early
+            
+            if 'extract_error' in abort_result:
+                yield f"data: {json.dumps({'error': abort_result['extract_error']})}\n\n"
+                return
+                
             comments = abort_result.get('extract')
             
             if not comments:
-                yield f"data: {json.dumps({'error': 'No comments found or unable to extract comments due to bot detection.'})}\n\n"
+                yield f"data: {json.dumps({'error': 'No comments found for this video.'})}\n\n"
                 return
             
             # Step 2: Translate & Summarize using Gemini Pipeline
@@ -61,6 +70,10 @@ def process_video():
             
             yield from run_task('trans_summary', translate_and_summarise, comments, groq_api_key)
             if abort_event.is_set(): return # Terminated early
+            
+            if 'trans_summary_error' in abort_result:
+                yield f"data: {json.dumps({'error': abort_result['trans_summary_error']})}\n\n"
+                return
             
             payload = abort_result.get('trans_summary', {})
             translated_comments = payload.get("translated_comments", [])
