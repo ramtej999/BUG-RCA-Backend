@@ -1,6 +1,6 @@
 flask
 flask-cors
-gunicorn
 google-api-python-client
 python-dotenv
 groq
+gunicorn==21.2.0
