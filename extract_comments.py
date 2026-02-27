@@ -18,10 +18,11 @@ def fetch_comments(video_url, api_key=None, abort_event=None):
     """
     Fetches all top-level comments using YouTube Data API v3.
     """
-    if not api_key:
-        api_key = os.environ.get("YOUTUBE_API_KEY")
-    if not api_key:
-        api_key = os.environ.get("YOUTUBE_API_KEY")
+    if api_key:
+        api_key = api_key.strip()
+    else:
+        api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
+        
     if not api_key:
         raise ValueError("YouTube API key not provided.")
         
