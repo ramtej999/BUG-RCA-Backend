@@ -26,7 +26,7 @@ def _call_groq(prompt: str, api_key=None, json_mode=False) -> str:
     response = client.chat.completions.create(**kwargs)
     return response.choices[0].message.content
 
-def translate_comments(comments: list[str], api_key=None, abort_event=None) -> list[str]:
+def translate_comments(comments: list[str], api_key=None, abort_event=None, progress_callback=None) -> list[str]:
     translated_results = []
     batch_size = 20
     total_batches = (len(comments) + batch_size - 1) // batch_size
@@ -37,7 +37,9 @@ def translate_comments(comments: list[str], api_key=None, abort_event=None) -> l
             break
         batch = comments[i:i + batch_size]
         batch_num = (i // batch_size) + 1
-        print(f"Translating batch {batch_num}/{total_batches}...")
+        msg = f"Translating batch {batch_num}/{total_batches}..."
+        print(msg)
+        if progress_callback: progress_callback(msg)
         
         prompt_lines = ["Translate the following Japanese YouTube comments to English. Return only the translations in the exact same numbered format, preserving emojis and meaning:"]
         for idx, comment in enumerate(batch):
@@ -71,7 +73,7 @@ def translate_comments(comments: list[str], api_key=None, abort_event=None) -> l
             
     return translated_results
 
-def summarize_comments(translated_comments: list[str], api_key=None, abort_event=None) -> str:
+def summarize_comments(translated_comments: list[str], api_key=None, abort_event=None, progress_callback=None) -> str:
     chunk_size = 500
     total_chunks = (len(translated_comments) + chunk_size - 1) // chunk_size
     chunk_summaries = []
@@ -82,7 +84,9 @@ def summarize_comments(translated_comments: list[str], api_key=None, abort_event
             break
         chunk = translated_comments[i:i + chunk_size]
         chunk_num = (i // chunk_size) + 1
-        print(f"Summarising chunk {chunk_num}/{total_chunks}...")
+        msg = f"Summarising chunk {chunk_num}/{total_chunks}..."
+        print(msg)
+        if progress_callback: progress_callback(msg)
         
         prompt = "Summarize the following English YouTube comments into the main themes, common feedback, and any recurring bug reports:\n\n"
         prompt += "\n".join([f"- {c}" for c in chunk])
@@ -99,7 +103,9 @@ def summarize_comments(translated_comments: list[str], api_key=None, abort_event
     if getattr(abort_event, 'is_set', lambda: False)():
         return "Not enough data or summarization aborted."
 
-    print("Generating comprehensive final summary in structured JSON format...")
+    msg = "Generating comprehensive final summary in structured JSON format..."
+    print(msg)
+    if progress_callback: progress_callback(msg)
     final_prompt = "Combine and format the following chunk summaries into a comprehensive analysis.\n"
     final_prompt += "You must return a strictly valid JSON object matching this exact schema:\n"
     final_prompt += "{\n"
@@ -125,8 +131,8 @@ def summarize_comments(translated_comments: list[str], api_key=None, abort_event
         print(f"Error generating final summary: {e}")
         return "\n\n".join(chunk_summaries)
 
-def translate_and_summarise(comments: list[str], api_key=None, abort_event=None) -> dict:
-    translated = translate_comments(comments, api_key=api_key, abort_event=abort_event)
+def translate_and_summarise(comments: list[str], api_key=None, abort_event=None, progress_callback=None) -> dict:
+    translated = translate_comments(comments, api_key=api_key, abort_event=abort_event, progress_callback=progress_callback)
     
     if abort_event and abort_event.is_set():
         return {
@@ -134,7 +140,7 @@ def translate_and_summarise(comments: list[str], api_key=None, abort_event=None)
             "summary": "Process aborted by user."
         }
         
-    summary = summarize_comments(translated, api_key=api_key, abort_event=abort_event)
+    summary = summarize_comments(translated, api_key=api_key, abort_event=abort_event, progress_callback=progress_callback)
     
     return {
         "translated_comments": translated,
