@@ -10,8 +10,15 @@ from extract_comments import fetch_comments
 from trans_summary import translate_and_summarise
 import threading
 import queue
+import logging
+
+# Configure basic logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
+
+# Temporary in-memory cache to prevent duplicate Groq calls on frontend retry
+processed_requests_cache = {}
 
 # Enable CORS for all domains to allow React frontend connection
 CORS(app)
@@ -23,6 +30,11 @@ import json
 def home():
     return jsonify({"status": "healthy", "message": "Bug-RCA Backend is running!"})
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    logging.info("Health check ping received. Server is awake.")
+    return jsonify({"status": "awake"})
+
 @app.route('/api/process-video', methods=['POST'])
 def process_video():
     data = request.json
@@ -32,9 +44,25 @@ def process_video():
     video_url = data['url']
     youtube_api_key = data.get('youtube_api_key', '').strip()
     groq_api_key = data.get('groq_api_key', '').strip()
+    request_id = data.get('request_id', '').strip()
     
     if not youtube_api_key or not groq_api_key:
         return jsonify({'error': 'Both YouTube and Groq API keys are required.'}), 400
+        
+    if not request_id:
+        return jsonify({'error': 'request_id is required to prevent duplicate processing.'}), 400
+        
+    # Request ID Protection: Return instantly if we already processed this
+    if request_id in processed_requests_cache:
+        logging.info(f"Retrieving cached result for request_id: {request_id}")
+        def cached_generate():
+            yield f"data: {json.dumps({'status': 'extracting', 'message': 'Loading from cache...'})}\n\n"
+            yield f"data: {json.dumps({'status': 'complete', 'results': processed_requests_cache[request_id]})}\n\n"
+        return Response(cached_generate(), mimetype='text/event-stream', headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive'
+        })
     
     def generate():
         try:
@@ -87,10 +115,12 @@ def process_video():
             # Step 2: Translate & Summarize using Gemini Pipeline
             yield f"data: {json.dumps({'status': 'translating', 'message': f'Translating and summarizing {len(comments)} comments with Groq LLaMA...'})}\n\n"
             
+            logging.info(f"Triggering Groq LLM pipeline for request_id: {request_id}")
             yield from run_task('trans_summary', translate_and_summarise, comments, groq_api_key, progress_callback=progress_callback)
             if abort_event.is_set(): return # Terminated early
             
             if 'trans_summary_error' in abort_result:
+                logging.error(f"Groq pipeline failed for request_id {request_id}: {abort_result['trans_summary_error']}")
                 yield f"data: {json.dumps({'error': abort_result['trans_summary_error']})}\n\n"
                 return
             
@@ -98,9 +128,20 @@ def process_video():
             translated_comments = payload.get("translated_comments", [])
             summary = payload.get("summary", "Summarization failed.")
             
-            # Final output
+            # Final output & Caching
             extracted_translated_sample = translated_comments[:20] if translated_comments else []
-            yield f"data: {json.dumps({'status': 'complete', 'results': {'extracted_count': len(comments), 'comments': comments[:20], 'translated_comments': extracted_translated_sample, 'summary': summary}})}\n\n"
+            final_results = {
+                'extracted_count': len(comments), 
+                'comments': comments[:20], 
+                'translated_comments': extracted_translated_sample, 
+                'summary': summary
+            }
+            
+            # Store in memory for retry protection
+            processed_requests_cache[request_id] = final_results
+            logging.info(f"Successfully processed and cached request_id: {request_id}")
+            
+            yield f"data: {json.dumps({'status': 'complete', 'results': final_results})}\n\n"
             
         except GeneratorExit:
             # Triggered when client disconnects (clicks Stop button) mid-stream
