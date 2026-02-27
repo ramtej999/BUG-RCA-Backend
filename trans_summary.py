@@ -17,7 +17,7 @@ def _get_client(api_key=None):
 def _call_groq(prompt: str, api_key=None, json_mode=False) -> str:
     client = _get_client(api_key)
     kwargs = {
-        "model": "llama-3.3-70b-versatile",
+        "model": "llama-3.1-8b-instant",
         "messages": [{"role": "user", "content": prompt}]
     }
     if json_mode:
