@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import sys
 from groq import Groq
 from dotenv import load_dotenv
 
@@ -40,6 +41,7 @@ def translate_comments(comments: list[str], api_key=None, abort_event=None, prog
         batch_num = (i // batch_size) + 1
         msg = f"Translating batch {batch_num}/{total_batches}..."
         print(msg)
+        sys.stdout.flush()
         if progress_callback: progress_callback(msg)
         
         prompt_lines = ["Translate the following Japanese YouTube comments to English. Return only the translations in the exact same numbered format, preserving emojis and meaning:"]
@@ -69,6 +71,7 @@ def translate_comments(comments: list[str], api_key=None, abort_event=None, prog
             
         except Exception as e:
             print(f"Error translating batch {batch_num}: {e}. Skipping batch.")
+            sys.stdout.flush()
             translated_results.extend(batch)
             
     return translated_results
@@ -87,6 +90,7 @@ def summarize_comments(translated_comments: list[str], api_key=None, abort_event
         chunk_num = (i // chunk_size) + 1
         msg = f"Summarising chunk {chunk_num}/{total_chunks}..."
         print(msg)
+        sys.stdout.flush()
         if progress_callback: progress_callback(msg)
         
         prompt = "Summarize the following English YouTube comments into the main themes, common feedback, and any recurring bug reports:\n\n"
@@ -96,6 +100,7 @@ def summarize_comments(translated_comments: list[str], api_key=None, abort_event
             chunk_summaries.append(_call_groq(prompt, api_key=api_key))
         except Exception as e:
             print(f"Error summarizing chunk {chunk_num}: {e}")
+            sys.stdout.flush()
             
     if not chunk_summaries:
         return "Not enough data or summarization failed."
@@ -105,6 +110,7 @@ def summarize_comments(translated_comments: list[str], api_key=None, abort_event
 
     msg = "Generating comprehensive final summary in structured JSON format..."
     print(msg)
+    sys.stdout.flush()
     if progress_callback: progress_callback(msg)
     final_prompt = "Combine and format the following chunk summaries into a comprehensive analysis.\n"
     final_prompt += "You must return a strictly valid JSON object matching this exact schema:\n"
@@ -129,6 +135,7 @@ def summarize_comments(translated_comments: list[str], api_key=None, abort_event
         return json.loads(result_text)
     except Exception as e:
         print(f"Error generating final summary: {e}")
+        sys.stdout.flush()
         return "\n\n".join(chunk_summaries)
 
 def translate_and_summarise(comments: list[str], api_key=None, abort_event=None, progress_callback=None) -> dict:
